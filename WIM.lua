@@ -13,6 +13,59 @@ WIM_ClassColors = {};
 WIM_PlayerCache = {}
 WIM_PlayerCacheQueue = {}
 WIM_WhisperedTo = {}
+WIM_LastWhoSent = nil
+WIM_IsGM = false
+WIM_Debug = false
+
+-- GM Check on load: Check for "Teleport to GM Island" spell in spellbook
+local WIM_GMCheckFrame = CreateFrame("Frame")
+WIM_GMCheckFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+WIM_GMCheckFrame:SetScript("OnEvent", function()
+	local i = 1
+	while true do
+		local spellName = GetSpellName(i, BOOKTYPE_SPELL)
+		if not spellName then break end
+		if spellName == "Teleport to GM Island" then
+			WIM_IsGM = true
+			break
+		end
+		i = i + 1
+	end
+end)
+
+-- Debug helper with timestamp
+function WIM_DebugMsg(msg)
+	if WIM_Debug then
+		local timestamp = date("%H:%M:%S")
+		DEFAULT_CHAT_FRAME:AddMessage("|cff888888[" .. timestamp .. "]|r " .. msg)
+	end
+end
+
+-- Debug slash command
+SLASH_WIMDEBUG1 = "/wimdebug"
+SlashCmdList["WIMDEBUG"] = function()
+	WIM_Debug = not WIM_Debug
+	local timestamp = date("%H:%M:%S")
+	if WIM_Debug then
+		DEFAULT_CHAT_FRAME:AddMessage("|cff888888[" .. timestamp .. "]|r |cff00ff00[WIM]|r Debug mode ON")
+		DEFAULT_CHAT_FRAME:AddMessage("|cff888888[" .. timestamp .. "]|r |cff00ff00[WIM]|r Queue: " .. WIM_TableCount(WIM_PlayerCacheQueue) .. " players")
+		DEFAULT_CHAT_FRAME:AddMessage("|cff888888[" .. timestamp .. "]|r |cff00ff00[WIM]|r Cache: " .. WIM_TableCount(WIM_PlayerCache) .. " players")
+		DEFAULT_CHAT_FRAME:AddMessage("|cff888888[" .. timestamp .. "]|r |cff00ff00[WIM]|r LastWhoSent: " .. (WIM_LastWhoSent and string.format("%.1fs ago", GetTime() - WIM_LastWhoSent) or "never"))
+		DEFAULT_CHAT_FRAME:AddMessage("|cff888888[" .. timestamp .. "]|r |cff00ff00[WIM]|r IsGM: " .. tostring(WIM_IsGM))
+		-- Show queue contents
+		for name, info in WIM_PlayerCacheQueue do
+			DEFAULT_CHAT_FRAME:AddMessage("|cff888888[" .. timestamp .. "]|r |cff00ff00[WIM]|r   Queue: " .. name .. " (attempts=" .. info.attempts .. ")")
+		end
+	else
+		DEFAULT_CHAT_FRAME:AddMessage("|cff888888[" .. timestamp .. "]|r |cffff0000[WIM]|r Debug mode OFF")
+	end
+end
+
+function WIM_TableCount(t)
+	local count = 0
+	for _ in t do count = count + 1 end
+	return count
+end
 
 WIM_AlreadyCheckedGuildRoster = false;
 
@@ -263,36 +316,77 @@ function WIM_PlayerCacheQueueEmpty()
 end
 
 function WIM_Update()
-	-- Turtle WoW: 30 second WHO cooldown
-	local WHO_COOLDOWN = 30
-	if not WIM_LastWhoListUpdate or GetTime() - WIM_LastWhoListUpdate > WHO_COOLDOWN then
-		-- Find player with lowest attempts (round-robin fairness)
-		local nextPlayer = nil
-		local lowestAttempts = 999
+	-- Turtle WoW: 30 second WHO cooldown (global) - GMs skip cooldown but wait for response
+	if not WIM_IsGM then
+		local WHO_COOLDOWN = 30
+		if WIM_LastWhoSent and GetTime() - WIM_LastWhoSent < WHO_COOLDOWN then
+			return
+		end
 		
-		for name, info in WIM_PlayerCacheQueue do
-			-- Remove from queue after 3 failed attempts
-			if info.attempts > 3 then
-				WIM_PlayerCacheQueue[name] = nil
-			elseif info.attempts < lowestAttempts and (not info.last_sent or GetTime() - info.last_sent > WHO_COOLDOWN) then
-				lowestAttempts = info.attempts
-				nextPlayer = name
+		-- Don't send multiple WHOs if we're still waiting for results (non-GM only)
+		if WIM_WhoScanInProgress then
+			local timeout = 10
+			if WIM_LastWhoSent and GetTime() - WIM_LastWhoSent < timeout then
+				return
 			end
+			-- Timeout reached, allow retry
+			WIM_DebugMsg("|cffffff00[WIM WHO]|r Timeout reached, allowing retry")
+			WIM_WhoScanInProgress = false
 		end
-		
-		if nextPlayer then
-			local info = WIM_PlayerCacheQueue[nextPlayer]
-			SendWho('n-"'..nextPlayer..'"')
-			info.last_sent = GetTime()
-			info.attempts = info.attempts + 1
+	else
+		-- GM: Still need to wait for WHO response before sending next one
+		if WIM_WhoScanInProgress then
+			local timeout = 2 -- Short timeout for GMs
+			if WIM_LastWhoSent and GetTime() - WIM_LastWhoSent < timeout then
+				return
+			end
+			-- Timeout reached, allow retry
+			WIM_DebugMsg("|cffffff00[WIM WHO]|r GM timeout reached, allowing retry")
+			WIM_WhoScanInProgress = false
 		end
+	end
+	
+	-- Find next player to query (round-robin by lowest attempts)
+	local nextPlayer = nil
+	local lowestAttempts = 999
+	local toRemove = {}
+	
+	for name, info in WIM_PlayerCacheQueue do
+		-- Mark for removal after 5 failed attempts
+		if info.attempts >= 5 then
+			tinsert(toRemove, name)
+		elseif info.attempts < lowestAttempts then
+			lowestAttempts = info.attempts
+			nextPlayer = name
+		end
+	end
+	
+	-- Remove failed players outside of loop
+	for _, name in toRemove do
+		WIM_DebugMsg("|cffff0000[WIM WHO]|r Removing " .. name .. " from queue (5 failed attempts)")
+		WIM_PlayerCacheQueue[name] = nil
+	end
+	
+	if nextPlayer then
+		local info = WIM_PlayerCacheQueue[nextPlayer]
+		WIM_DebugMsg("|cff00ffff[WIM WHO]|r Sending WHO for: " .. nextPlayer .. " (attempt " .. (info.attempts + 1) .. ")" .. (WIM_IsGM and " [GM]" or ""))
+		WIM_WhoScanInProgress = true
+		-- Only call SetWhoToUI for non-GMs
+		if not WIM_IsGM then
+			SetWhoToUI(1)
+		end
+		SendWho('n-"'..nextPlayer..'"')
+		info.attempts = info.attempts + 1
+		WIM_LastWhoSent = GetTime()
 	end
 end
 
 function WIM_WhoInfo(name, callback)
 	if WIM_PlayerCache[name] then
+		WIM_DebugMsg("|cff00ff00[WIM WHO]|r " .. name .. " already in cache, skipping WHO")
 		callback(WIM_PlayerCache[name])
 	else
+		WIM_DebugMsg("|cffffff00[WIM WHO]|r Adding " .. name .. " to queue")
 		WIM_WhoScanInProgress = true
 		SetWhoToUI(1)
 		WIM_PlayerCacheQueue[name] = WIM_PlayerCacheQueue[name] or { callbacks = {} }
@@ -304,6 +398,7 @@ end
 local function playerCheck(player, k)
 	-- Always show messages immediately - WHO info will load async
 	-- Queue WHO request for player info (class/race/level) if not cached
+	WIM_DebugMsg("|cff00ffff[WIM]|r playerCheck: " .. player)
 	if not WIM_PlayerCache[player] and not WIM_PlayerCacheQueue[player] then
 		WIM_WhoInfo(player, function(info)
 			-- Info loaded - update window if exists
