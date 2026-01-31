@@ -24,4 +24,4 @@
 - Removed "Block Low Level" option
 - Added debug mode: `/wimdebug`
 
-And some other minor quality of life changes. 🐢
+Some more minor quality of life changes. 🐢
