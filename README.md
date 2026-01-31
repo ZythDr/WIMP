@@ -1,6 +1,6 @@
-# WIM - TurtleWoW Fork
+# WIM 1.4.0 - TurtleWoW
 
-## Patch Notes - v1.4.0
+## Patch Notes
 
 ### New Features
 - **New Filter Type: Exact** – Now filters only whispers matching exact. "inv" only blocks message "inv" but still allows "can you make raid inv later"
@@ -24,4 +24,4 @@
 - Removed "Block Low Level" option
 - Added debug mode: `/wimdebug`
 
-And some other minor quality of life changes.
+And some other minor quality of life changes. 🐢
