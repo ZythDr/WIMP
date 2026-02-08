@@ -3,6 +3,66 @@ WIM_TradeSkillIsHooked = false;
 WIM_CraftSkillIsHooked = false;
 WIM_InspectIsHooked = false;
 
+local function WIM_GetReplyBindingKey()
+	if type(GetBindingKey) ~= "function" then
+		return nil
+	end
+
+	local candidates = {
+		"REPLY",
+		"REPLY_TELL",
+		"REPLY_WHISPER",
+		"REPLYWHISPER",
+		"REPLYLASTWHISPER",
+	}
+
+	for i = 1, table.getn(candidates) do
+		local key1 = GetBindingKey(candidates[i])
+		if key1 and key1 ~= "" then
+			return key1
+		end
+	end
+
+	return nil
+end
+
+local function WIM_ShouldApplyReplyHotkeyFix()
+	local key = WIM_GetReplyBindingKey()
+	if not key or key == "" then
+		return false
+	end
+
+	local mainKey = string.gsub(key, "^.+-", "")
+	local printableNamedKeys = {
+		MINUS = true,
+		EQUALS = true,
+		BACKSLASH = true,
+		LEFTBRACKET = true,
+		RIGHTBRACKET = true,
+		SEMICOLON = true,
+		APOSTROPHE = true,
+		COMMA = true,
+		PERIOD = true,
+		SLASH = true,
+		GRAVE = true,
+		SPACE = true,
+		NUMPADDECIMAL = true,
+		NUMPADDIVIDE = true,
+		NUMPADMULTIPLY = true,
+		NUMPADMINUS = true,
+		NUMPADPLUS = true,
+	}
+	if string.len(mainKey) == 1 then
+		return true
+	end
+
+	if printableNamedKeys[mainKey] then
+		return true
+	end
+
+	return false
+end
+
 
 
 function WIM_FriendsFrame_SendMessage()
@@ -57,9 +117,17 @@ end
 
 function WIM_ChatFrame_ReplyTell(chatFrame)
 	chatFrame = chatFrame or DEFAULT_CHAT_FRAME
-	local target = ChatEdit_GetLastTellTarget(chatFrame.editBox)
+	local editBox = chatFrame and chatFrame.editBox or ChatFrameEditBox
+	local target = editBox and ChatEdit_GetLastTellTarget(editBox) or ""
 	if target ~= '' then
-		WIM_PostMessage(target, '', 5, '', '', true)
+		local useHotkeyFix = WIM_ShouldApplyReplyHotkeyFix()
+		if useHotkeyFix then
+			WIM_PostMessage(target, '', 5, '', '', true)
+		else
+			WIM_PostMessage(target, '', 5, '', '')
+		end
+	elseif WIM_ChatFrame_ReplyTell_orig then
+		return WIM_ChatFrame_ReplyTell_orig(chatFrame)
 	end
 end
 
@@ -83,11 +151,44 @@ end
 
 function WIM_AtlasLootItem_OnClick(arg1)
 	if ( IsShiftKeyDown() ) then
-		if ( WIM_EditBoxInFocus ) then
-			local color = strsub(getglobal("AtlasLootItem_"..this:GetID().."_Name"):GetText(), 1, 10);
-			local name = strsub(getglobal("AtlasLootItem_"..this:GetID().."_Name"):GetText(), 11);
-			WIM_EditBoxInFocus:Insert(color.."|Hitem:"..this.itemID..":0:0:0|h["..name.."]|h|r");
+		local nameText = getglobal("AtlasLootItem_"..this:GetID().."_Name"):GetText()
+		if nameText then
+			local _, _, color = strfind(nameText, "(|cff%x%x%x%x%x%x)")
+			color = color or NORMAL_FONT_COLOR_CODE
+			local name = gsub(nameText, "|cff%x%x%x%x%x%x", "")
+			name = gsub(name, "|r", "")
+			local link = nil
+			local idPrefix = string.sub(this.itemID, 1, 1)
+			if idPrefix == "e" then
+				local spellID = tonumber(string.sub(this.itemID, 2))
+				if spellID then
+					link = NORMAL_FONT_COLOR_CODE.."|Henchant:"..spellID.."|h["..name.."]|h|r"
+				end
+			elseif idPrefix == "s" then
+				local spellID = tonumber(string.sub(this.itemID, 2))
+				local craftItem = GetSpellInfoAtlasLootDB and GetSpellInfoAtlasLootDB["craftspells"] and GetSpellInfoAtlasLootDB["craftspells"][spellID] and GetSpellInfoAtlasLootDB["craftspells"][spellID]["craftItem"]
+				if craftItem and craftItem ~= 0 and AtlasLoot_GetChatLink then
+					link = AtlasLoot_GetChatLink(craftItem)
+				elseif spellID then
+					link = NORMAL_FONT_COLOR_CODE.."|Henchant:"..spellID.."|h["..name.."]|h|r"
+				end
+			else
+				link = color.."|Hitem:"..this.itemID..":0:0:0|h["..name.."]|h|r"
+			end
+			if link then
+				if WIM_EditBoxInFocus then
+					WIM_EditBoxInFocus:Insert(link)
+				else
+					if ChatFrameEditBox and not ChatFrameEditBox:IsVisible() and ChatEdit_ActivateChat then
+						ChatEdit_ActivateChat(ChatFrameEditBox)
+					end
+					if ChatFrameEditBox then
+						ChatFrameEditBox:Insert(link)
+					end
+				end
+			end
 		end
+		return
 	end
 	WIM_AtlasLootItem_OnClick_orig(arg1);
 end
@@ -198,6 +299,7 @@ function WIM_PaperDollItemSlotButton_OnClick(arg1)
 	if(arg1 == "LeftButton" and IsShiftKeyDown()) then
 		if(WIM_EditBoxInFocus) then
 			WIM_EditBoxInFocus:Insert(GetInventoryItemLink("player", this:GetID()));
+			return;
 		end
 	end
 	WIM_PaperDollItemSlotButton_OnClick_orig(arg1);
@@ -288,7 +390,19 @@ function WIM_FriendsFrame_OnEvent()
 						level = level,
 						race = race,
 						guild = guild,
+						cached = false,
+						source = nil,
+						stamp = time(),
 					}
+					if WIM_PlayerCacheDB and WIM_Data and WIM_Data.wimPlayerDBLookup ~= false then
+						WIM_PlayerCacheDB[name] = {
+							class = class,
+							level = level,
+							race = race,
+							guild = guild,
+							stamp = WIM_PlayerCache[name].stamp,
+						}
+					end
 
 					for _, callback in callbacks do
 						callback(WIM_PlayerCache[name])
@@ -448,6 +562,14 @@ function WIM_SetUpHooks()
 		-- WIM_ItemButton_OnClick(button, ignoreModifiers);
 
 	end;
+
+	-- Ensure AtlasLoot hook is applied even if AtlasLoot loaded before WIM
+	if IsAddOnLoaded and IsAddOnLoaded("AtlasLoot") then
+		if AtlasLootItem_OnClick and AtlasLootItem_OnClick ~= WIM_AtlasLootItem_OnClick then
+			WIM_AtlasLootItem_OnClick_orig = AtlasLootItem_OnClick;
+			AtlasLootItem_OnClick = WIM_AtlasLootItem_OnClick;
+		end
+	end
 	
 	if (AllInOneInventoryFrameItemButton_OnClick) then
 		--Hook ContainerFrameItemButton_OnClick
