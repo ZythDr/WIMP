@@ -1,4 +1,34 @@
 WIM_CHANGE_LOG = [[
+|rVersion 1.0 (WIMP Fork) (02-08-2026)|cffffffff
+[+] - Added merged tabbed window mode with a shared conversation frame.
+[+] - Added a horizontal scrollable tab bar with unread flashing animation.
+[+] - Added option to place tab bar above or below the message window.
+[+] - Added class-colored names and borders on tabs.
+[+] - Added right-click close for tab conversations.
+[+] - Added click-outside unfocus behavior for the message input.
+[+] - Added session-only drag-resize handle (resets on /reload).
+[+] - Added class-colored names in message lines and history.
+[+] - Added player cache fallback placeholders for details before /who resolves.
+[+] - Added pfUI tab skin integration when pfUI WIM integration is enabled.
+[+] - Added pfUI player DB fallback for class/guild/race/level before /who resolves.
+[*] - Fixed AtlasLoot shift-click links no longer sending immediately.
+[*] - Fixed character panel shift-click links no longer duplicating.
+
+|rVersion 1.4.0 (TurtleWoW)|cffffffff
+[+] - Added new filter type: Exact.
+[+] - Added Escape unfocus option while keeping input text.
+[+] - Added Alt+Arrow key toggle for cursor movement behavior.
+[*] - Fixed in-game links insertion (items/spells/quests) without text gaps.
+[*] - Fixed macro/script whispers to send and display correctly in WIM.
+[*] - Fixed Lua 5.0 filter iteration by using pairs().
+[*] - Reorganized General options and normalized checkbox code formatting.
+
+|rVersion 1.3.5 (TurtleWoW)|cffffffff
+[+] - Added 30s WHO cooldown for TurtleWoW limits.
+[*] - Messages now display immediately while WHO loads asynchronously.
+[-] - Removed Block Low Level option.
+[+] - Added debug mode command: /wimdebug
+
 Version 1.3.3 (12-27-2017)|cffffffff
 [+] - refactoring by shirsig
 
