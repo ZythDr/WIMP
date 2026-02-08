@@ -1,6 +1,7 @@
 WIM_pfUI = {
   initialized = false,
   defaultInset = nil,
+  focusWindowTarget = nil,
 }
 
 local function WIM_pfUI_IsEnabled()
@@ -100,6 +101,111 @@ local function WIM_pfUI_GetColorFromString(colorstr, fr, fg, fb, fa)
   end
   return fr or 0, fg or 0, fb or 0, fa or 1
 end
+
+local function WIM_pfUI_GetClassColorRGB(theUser)
+  if not theUser then
+    return nil
+  end
+
+  if WIM_EnsurePlayerCacheFallback then
+    WIM_EnsurePlayerCacheFallback(theUser)
+  end
+
+  local info = WIM_PlayerCache and WIM_PlayerCache[theUser]
+  if not info or not info.class then
+    return nil
+  end
+
+  local hex = WIM_ClassColors and WIM_ClassColors[info.class]
+  if not hex then
+    return nil
+  end
+
+  local r = tonumber(string.sub(hex, 1, 2), 16) / 255
+  local g = tonumber(string.sub(hex, 3, 4), 16) / 255
+  local b = tonumber(string.sub(hex, 5, 6), 16) / 255
+  return r, g, b
+end
+
+local function WIM_pfUI_GetBorderTarget(frameObj)
+  if not frameObj then
+    return nil
+  end
+  if frameObj.backdrop and frameObj.backdrop.SetBackdropBorderColor then
+    return frameObj.backdrop
+  end
+  if frameObj.SetBackdropBorderColor then
+    return frameObj
+  end
+  return nil
+end
+
+local function WIM_pfUI_ClearFocusBorders()
+  local target = WIM_pfUI.focusWindowTarget
+  if target and target.SetBackdropBorderColor then
+    local r, g, b, a = WIM_pfUI_GetColorFromString(
+      pfUI_config and pfUI_config.appearance and pfUI_config.appearance.border and pfUI_config.appearance.border.color,
+      0.55, 0.55, 0.55, 1
+    )
+    target:SetBackdropBorderColor(r, g, b, a or 1)
+  end
+  WIM_pfUI.focusWindowTarget = nil
+end
+
+local function WIM_pfUI_ApplyFocusBorders()
+  WIM_pfUI_ClearFocusBorders()
+
+  if not WIM_pfUI_IsEnabled() then
+    return
+  end
+
+  if not WIM_Data then
+    return
+  end
+
+  if not WIM_Data.pfuiFocusWindowClassBorder then
+    return
+  end
+
+  local edit = WIM_EditBoxInFocus
+  if not edit then
+    return
+  end
+
+  local frame = edit.GetParent and edit:GetParent() or nil
+  if not frame then
+    return
+  end
+
+  if not (WIM_IsMergeEnabled and WIM_IsMergeEnabled()) then
+    return
+  end
+  if not (WIM_SharedFrameName and frame:GetName() == WIM_SharedFrameName) then
+    return
+  end
+
+  local user = frame.theUser or WIM_TabBar_ActiveUser
+  local r, g, b = WIM_pfUI_GetClassColorRGB(user)
+  if not r then
+    return
+  end
+
+  local winTarget = WIM_pfUI_GetBorderTarget(frame)
+  if (not winTarget) and pfUI and pfUI.api and pfUI.api.CreateBackdrop then
+    pfUI.api.CreateBackdrop(frame, nil, nil, tonumber(pfUI_config and pfUI_config.chat and pfUI_config.chat.global and pfUI_config.chat.global.alpha) or .8)
+    winTarget = WIM_pfUI_GetBorderTarget(frame)
+  end
+  if winTarget and winTarget.SetBackdropBorderColor then
+    winTarget:SetBackdropBorderColor(r, g, b, 1)
+    WIM_pfUI.focusWindowTarget = winTarget
+  end
+end
+
+function WIM_pfUI_UpdateFocusBorders()
+  WIM_pfUI_ApplyFocusBorders()
+end
+
+WIM_pfUI_OnEditFocusChanged = WIM_pfUI_UpdateFocusBorders
 
 local function WIM_pfUI_ApplyClassColors()
   if not (WIM_ClassColors and RAID_CLASS_COLORS) then
@@ -436,6 +542,7 @@ local function WIM_pfUI_Refresh()
   WIM_pfUI_SetInset(enabled)
 
   if not enabled then
+    WIM_pfUI_ClearFocusBorders()
     WIM_pfUI_ReattachTabBar()
     return
   end
@@ -456,6 +563,14 @@ local function WIM_pfUI_Refresh()
       WIM_pfUI_ApplyFontFace(f)
     end
   end
+
+  WIM_pfUI_ApplyFocusBorders()
+end
+
+local function WIM_pfUI_UpdateFocusBordersIfEnabled()
+  if WIM_pfUI_IsEnabled() then
+    WIM_pfUI_ApplyFocusBorders()
+  end
 end
 
 local function WIM_pfUI_Init()
@@ -474,7 +589,11 @@ local function WIM_pfUI_Init()
     if WIM_pfUI_IsEnabled() then
       WIM_pfUI_ApplyFontFace(theWin)
     end
+    WIM_pfUI_UpdateFocusBordersIfEnabled()
   end)
+
+  hooksecurefunc("WIM_SelectUser", WIM_pfUI_UpdateFocusBordersIfEnabled)
+  hooksecurefunc("WIM_SetWhoInfo", WIM_pfUI_UpdateFocusBordersIfEnabled)
 
   if WIM_TabBar_Ensure then
     hooksecurefunc("WIM_TabBar_Ensure", function()
