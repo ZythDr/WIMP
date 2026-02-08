@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: WIMP (WIM Plus)
 ## Author: Based on WIM by Kirchlive (Tetto), further improved by ZythDr as WIM Plus
-## Version: 1.0.5
+## Version: 1.0
 ## Notes: Give whispers an instant messenger feel. Now with tabs!
 ## DefaultState: Enabled
 ## OptionalDeps: Titan
