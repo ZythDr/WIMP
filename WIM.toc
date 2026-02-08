@@ -1,12 +1,11 @@
 ## Interface: 11200
-## Title: WIM
-## Author: Reworked by Kirchlive (Tetto) and Claude Code
-## Version: 1.4.0
-## Notes: Give whispers an instant messenger feel.
-## Notes-ruRU: Интерфейс для шепота.
+## Title: WIMP (WIM Plus)
+## Author: Based on WIM by Kirchlive (Tetto), further improved by ZythDr as WIM Plus
+## Version: 1.0.5
+## Notes: Give whispers an instant messenger feel. Now with tabs!
 ## DefaultState: Enabled
 ## OptionalDeps: Titan
-## SavedVariables: WIM_Data, WIM_Alias, WIM_Filters, WIM_History
+## SavedVariables: WIM_Data, WIM_Alias, WIM_Filters, WIM_History, WIM_PlayerCacheDB
 WIM.xml
 WIM_UrlCopy.xml
 WIM_Icon.xml
