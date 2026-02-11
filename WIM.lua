@@ -27,6 +27,7 @@ WIM_UnfocusBlocker = nil
 WIM_CacheDimFactor = 0.6
 WIM_SessionWinSize = {}
 WIM_ResizeHandle = {}
+WIM_MergePendingUser = nil
 
 -- GM Check on load: Check for "Teleport to GM Island" spell in spellbook
 local WIM_GMCheckFrame = CreateFrame("Frame")
@@ -703,6 +704,9 @@ function WIM_SelectUser(theUser)
 	if not theUser or not WIM_Windows[theUser] then
 		return
 	end
+	if WIM_MergePendingUser and string.upper(WIM_MergePendingUser) == string.upper(theUser) then
+		WIM_MergePendingUser = nil
+	end
 	if not WIM_IsMergeEnabled() then
 		local f = WIM_GetOrCreateWindow(theUser)
 		if not f then
@@ -1255,6 +1259,11 @@ function WIM_PostMessage(user, msg, ttype, from, raw_msg, hotkeyFix)
 	local isIncoming = (ttype == 1)
 	local isActive = isMerge and WIM_TabBar_ActiveUser and string.upper(WIM_TabBar_ActiveUser) == string.upper(user)
 	local wasHidden = isMerge and f and not f:IsVisible()
+	if isMerge and isIncoming and wasHidden then
+		-- If the merged frame is currently hidden, remember this sender so
+		-- the next show will open on the incoming whisper tab.
+		WIM_MergePendingUser = user
+	end
 	local shouldSelect = true
 	if isMerge and isIncoming and WIM_TabBar_ActiveUser and not isActive and not wasHidden then
 		shouldSelect = false
@@ -1263,12 +1272,13 @@ function WIM_PostMessage(user, msg, ttype, from, raw_msg, hotkeyFix)
 		if ttype == 2 and WIM_Data.popOnSend == false then
 			--[ do nothing, user prefers not to pop on send
 		else
-			if isMerge then
-				if shouldSelect then
-					WIM_SelectUser(user)
-					WIM_Windows[user].newMSG = false
-				end
-				f:Show()
+				if isMerge then
+					if shouldSelect then
+						WIM_SelectUser(user)
+						WIM_Windows[user].newMSG = false
+						WIM_MergePendingUser = nil
+					end
+					f:Show()
 				if ttype ==5 then
 					f:Raise()
 					getglobal(f:GetName()..'MsgBox'):SetFocus()
@@ -2313,8 +2323,29 @@ function WIM_UpdateTabs()
 end
 
 function WIM_WindowOnShow()
-	if WIM_IsMergeEnabled() and this and this.theUser then
-		WIM_TabBar_SetActiveUser(this.theUser)
+	if WIM_IsMergeEnabled() and this then
+		if WIM_MergePendingUser and not WIM_Windows[WIM_MergePendingUser] then
+			WIM_MergePendingUser = nil
+		end
+		if WIM_MergePendingUser and WIM_Windows[WIM_MergePendingUser] then
+			local pending = WIM_MergePendingUser
+			WIM_MergePendingUser = nil
+			if not this.theUser or string.upper(this.theUser) ~= string.upper(pending) then
+				WIM_SelectUser(pending)
+				return
+			end
+		end
+		local showUser = this.theUser or WIM_TabBar_ActiveUser
+		if showUser and WIM_Windows[showUser] then
+			if not this.theUser or string.upper(this.theUser) ~= string.upper(showUser) then
+				this.theUser = showUser
+			end
+			WIM_TabBar_SetActiveUser(showUser)
+			-- Defensive sync for first-show cases where frame visibility changes
+			-- happen before the shared conversation buffer gets reloaded.
+			WIM_LoadConversation(showUser, this)
+			WIM_SetWhoInfo(showUser)
+		end
 	end
 end
 
